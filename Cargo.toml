@@ -1,0 +1,19 @@
+[package]
+name = "nd-zip"
+version = "0.0.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+anyhow = "1.0.75"
+argh = "0.1.12"
+chardetng = "0.1.17"
+encoding_rs = "0.8.33"
+zip = "0.6.6"
+
+[profile.release]
+lto = "fat"
+opt-level = 3
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
