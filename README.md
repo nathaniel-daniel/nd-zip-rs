@@ -3,6 +3,19 @@ A zip tool in Rust, specifically designed to be resilient against files which ha
 Where 7-Zip produces [mojibake](https://en.wikipedia.org/wiki/Mojibake), this produces valid unicode filenames.
 This program will use Firefox's [`chardetng`](https://github.com/hsivonen/chardetng) library to guess the file encoding before extracting.
 
+## Building
+This project uses `cargo` to build.
+It may be build as follows:
+```bash
+cargo build
+```
+
+## Installing
+This project may be installed directly from Github with `cargo`, as follows:
+```bash
+cargo install --force --git https://github.com/nathaniel-daniel/nd-zip-rs
+```
+
 ## Usage
 Currently only extraction is supported.
 It is used as follows:
