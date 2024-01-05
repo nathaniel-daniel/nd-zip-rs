@@ -1,0 +1,3 @@
+(function() {var implementors = {
+"nd_zip":[["impl FromArgs for <a class=\"struct\" href=\"nd_zip/struct.ExtractOptions.html\" title=\"struct nd_zip::ExtractOptions\">ExtractOptions</a>"],["impl FromArgs for <a class=\"enum\" href=\"nd_zip/enum.Subcommand.html\" title=\"enum nd_zip::Subcommand\">Subcommand</a>"],["impl FromArgs for <a class=\"struct\" href=\"nd_zip/struct.Options.html\" title=\"struct nd_zip::Options\">Options</a>"]]
+};if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()
