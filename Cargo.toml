@@ -9,7 +9,7 @@ anyhow = "1.0.86"
 argh = "0.1.12"
 chardetng = "0.1.17"
 encoding_rs = "0.8.34"
-zip = "1.1.3"
+zip = "2.0.0"
 
 [profile.release]
 lto = "fat"
