@@ -11,6 +11,7 @@ struct Options {
 #[argh(subcommand)]
 enum Subcommand {
     Extract(self::commands::extract::Options),
+    Info(self::commands::info::Options),
 }
 
 fn main() -> anyhow::Result<()> {
@@ -18,6 +19,7 @@ fn main() -> anyhow::Result<()> {
 
     match options.subcommand {
         Subcommand::Extract(options) => self::commands::extract::exec(options)?,
+        Subcommand::Info(options) => self::commands::info::exec(options)?,
     }
 
     Ok(())
