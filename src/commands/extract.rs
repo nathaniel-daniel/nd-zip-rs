@@ -27,6 +27,14 @@ pub struct Options {
         description = "the path to decompress to"
     )]
     pub out_path: PathBuf,
+
+    #[argh(
+        switch,
+        long = "verbose",
+        short = 'v',
+        description = "increase command verbosity"
+    )]
+    pub verbose: bool,
 }
 
 pub fn exec(options: Options) -> anyhow::Result<()> {
@@ -43,6 +51,22 @@ pub fn exec(options: Options) -> anyhow::Result<()> {
         let out_path = options.out_path.join(&*file_name);
 
         let times = get_zip_entry_file_times(&file)?;
+
+        if options.verbose {
+            println!("{}", file_name);
+
+            if let Some(accessed) = times.accessed {
+                println!("  Accessed: {}", OffsetDateTime::from(accessed));
+            }
+
+            if let Some(modified) = times.modified {
+                println!("  Modified: {}", OffsetDateTime::from(modified));
+            }
+
+            if let Some(created) = times.created {
+                println!("  Created: {}", OffsetDateTime::from(created));
+            }
+        }
 
         if file.is_dir() {
             std::fs::create_dir_all(&out_path).with_context(|| {
@@ -78,7 +102,7 @@ pub fn exec(options: Options) -> anyhow::Result<()> {
         }
     }
 
-    for (path, times) in dir_times.into_iter() {
+    for (path, times) in dir_times.into_iter().rev() {
         // TODO: Set created on Windows
         match (times.accessed, times.modified) {
             (Some(accessed), Some(modified)) => {
@@ -189,6 +213,7 @@ fn get_zip_entry_file_name<'a>(file: &'a ZipFile) -> anyhow::Result<Cow<'a, str>
 /// Returns a tuple of the accessed time, modified time, and create time.
 fn get_zip_entry_file_times(file: &ZipFile<'_>) -> anyhow::Result<FileTimes> {
     // TODO: Read extra fields
+    // dbg!(file.extra_data_fields().count());
 
     match file.last_modified() {
         Some(last_modified) => {
