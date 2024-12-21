@@ -212,6 +212,18 @@ fn get_zip_entry_file_name<'a>(file: &'a ZipFile) -> anyhow::Result<Cow<'a, str>
 /// # Returns
 /// Returns a tuple of the accessed time, modified time, and create time.
 fn get_zip_entry_file_times(file: &ZipFile<'_>) -> anyhow::Result<FileTimes> {
+    // I have no idea how to do this properly.
+    // I think nobody else does too.
+    // Zip files have a modern time format and a legacy one.
+    // (modern format handling is TODO).
+    // Lots of zip files only use the legacy format.
+    // This format is an encoded date time, with no timezone.
+    // As a result, lots of software can't agree how to handle it.
+    // 7Zip, WinRar, the Windows 11 file extractor, and this impl all give different answers,
+    // even apparently giving different UTC offsets between different files.
+    // I have no idea what I'm doing something wrong, if I'm even doing anything wrong, or if everyone else is doing something wrong.
+    // This is best effort anyways, and usually within a day of the "real?" value.
+
     // TODO: Read extra fields
     // dbg!(file.extra_data_fields().count());
 
