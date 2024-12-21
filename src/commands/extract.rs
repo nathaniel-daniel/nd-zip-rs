@@ -3,10 +3,14 @@ use anyhow::ensure;
 use anyhow::Context;
 use chardetng::EncodingDetector;
 use std::fs::File;
+use std::fs::FileTimes;
 use std::io::Write;
 use std::path::Component as PathComponent;
 use std::path::Path;
 use std::path::PathBuf;
+use std::time::SystemTime;
+use time::OffsetDateTime;
+use zip::read::ZipFile;
 use zip::ZipArchive;
 
 #[derive(Debug, argh::FromArgs)]
@@ -29,6 +33,7 @@ pub fn exec(options: Options) -> anyhow::Result<()> {
         .with_context(|| format!("failed to open \"{}\"", options.input_file.display()))?;
     let mut archive = ZipArchive::new(input_file)?;
 
+    let mut dir_times = Vec::new();
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)?;
         let file_name_raw = file.name_raw();
@@ -75,10 +80,16 @@ pub fn exec(options: Options) -> anyhow::Result<()> {
 
         let out_path = options.out_path.join(&*file_name);
 
+        let times = get_zip_entry_file_times(&file)?;
+
         if file.is_dir() {
             std::fs::create_dir_all(&out_path).with_context(|| {
                 format!("failed to create directory \"{}\"", out_path.display())
             })?;
+
+            if let Some(times) = times {
+                dir_times.push((out_path.clone(), times));
+            }
         } else if file.is_file() {
             // Some bad ZIP files do not provide a dir entry before a file entry.
             if let Some(parent_dir) = out_path.parent() {
@@ -93,6 +104,18 @@ pub fn exec(options: Options) -> anyhow::Result<()> {
                 .open(&out_path)
                 .with_context(|| format!("failed to open file at \"{}\"", out_path.display()))?;
             std::io::copy(&mut file, &mut out_file)?;
+
+            if let Some((accessed, modified)) = times {
+                let mut times = FileTimes::new();
+                if let Some(accessed) = accessed {
+                    times = times.set_accessed(accessed);
+                }
+                if let Some(modified) = modified {
+                    times = times.set_modified(modified);
+                }
+                out_file.set_times(times)?;
+            }
+
             out_file.flush()?;
             out_file.sync_all()?;
         } else {
@@ -100,5 +123,38 @@ pub fn exec(options: Options) -> anyhow::Result<()> {
         }
     }
 
+    for (path, times) in dir_times {
+        match times {
+            (Some(accessed), Some(modified)) => {
+                filetime::set_file_times(path, accessed.into(), modified.into())?;
+            }
+            (Some(accessed), None) => {
+                filetime::set_file_atime(path, accessed.into())?;
+            }
+            (None, Some(modified)) => {
+                filetime::set_file_mtime(path, modified.into())?;
+            }
+            (None, None) => {}
+        }
+    }
+
     Ok(())
+}
+
+/// Get the file times for a zip file.
+///
+/// # Returns
+/// Returns a tuple of the accessed time, modified time, and create time.
+fn get_zip_entry_file_times(
+    file: &ZipFile<'_>,
+) -> anyhow::Result<Option<(Option<SystemTime>, Option<SystemTime>)>> {
+    match file.last_modified() {
+        Some(last_modified) => {
+            let last_modified = OffsetDateTime::try_from(last_modified)?;
+            let last_modified = SystemTime::from(last_modified);
+
+            Ok(Some((Some(last_modified), Some(last_modified))))
+        }
+        None => Ok(None),
+    }
 }

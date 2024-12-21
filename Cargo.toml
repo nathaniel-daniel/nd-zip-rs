@@ -9,7 +9,9 @@ anyhow = "1.0.94"
 argh = "0.1.12"
 chardetng = "0.1.17"
 encoding_rs = "0.8.35"
-zip = "2.2.2"
+filetime = "0.2.25"
+time = "0.3.37"
+zip = { version = "2.2.2", features = [ "time" ] }
 
 [profile.release]
 lto = "fat"
