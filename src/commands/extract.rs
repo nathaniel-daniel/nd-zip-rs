@@ -2,8 +2,9 @@ use anyhow::bail;
 use anyhow::ensure;
 use anyhow::Context;
 use chardetng::EncodingDetector;
+use std::borrow::Cow;
 use std::fs::File;
-use std::fs::FileTimes;
+use std::fs::FileTimes as StdFileTimes;
 use std::io::Write;
 use std::path::Component as PathComponent;
 use std::path::Path;
@@ -36,47 +37,8 @@ pub fn exec(options: Options) -> anyhow::Result<()> {
     let mut dir_times = Vec::new();
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)?;
-        let file_name_raw = file.name_raw();
 
-        let mut encoding_detector = EncodingDetector::new();
-        encoding_detector.feed(file_name_raw, true);
-        let (encoding, is_likely_correct) = encoding_detector.guess_assess(None, true);
-
-        ensure!(
-            is_likely_correct,
-            "failed to guess file name character encoding"
-        );
-
-        let (file_name, _encoding, malformed) = encoding.decode(file_name_raw);
-
-        ensure!(!malformed, "file name \"{file_name}\" is malformed");
-
-        let has_nul = file_name.contains('\0');
-        ensure!(!has_nul, "file name has an interior NUL character");
-
-        let file_path = Path::new(&*file_name);
-        let mut depth: usize = 0;
-        for component in file_path.components() {
-            match component {
-                PathComponent::Prefix(_) => {
-                    bail!("file name contains a prefix");
-                }
-                PathComponent::RootDir => {
-                    bail!("file name is absolute");
-                }
-                PathComponent::ParentDir => {
-                    depth = depth
-                        .checked_sub(1)
-                        .context("file name attempts to go above root directory")?;
-                }
-                PathComponent::Normal(_) => {
-                    depth = depth
-                        .checked_add(1)
-                        .context("file name exceeds maximum depth")?;
-                }
-                PathComponent::CurDir => {}
-            }
-        }
+        let file_name = get_zip_entry_file_name(&file)?;
 
         let out_path = options.out_path.join(&*file_name);
 
@@ -87,7 +49,7 @@ pub fn exec(options: Options) -> anyhow::Result<()> {
                 format!("failed to create directory \"{}\"", out_path.display())
             })?;
 
-            if let Some(times) = times {
+            if times.has_time() {
                 dir_times.push((out_path.clone(), times));
             }
         } else if file.is_file() {
@@ -105,15 +67,8 @@ pub fn exec(options: Options) -> anyhow::Result<()> {
                 .with_context(|| format!("failed to open file at \"{}\"", out_path.display()))?;
             std::io::copy(&mut file, &mut out_file)?;
 
-            if let Some((accessed, modified)) = times {
-                let mut times = FileTimes::new();
-                if let Some(accessed) = accessed {
-                    times = times.set_accessed(accessed);
-                }
-                if let Some(modified) = modified {
-                    times = times.set_modified(modified);
-                }
-                out_file.set_times(times)?;
+            if times.has_time() {
+                out_file.set_times(times.into())?;
             }
 
             out_file.flush()?;
@@ -123,8 +78,9 @@ pub fn exec(options: Options) -> anyhow::Result<()> {
         }
     }
 
-    for (path, times) in dir_times {
-        match times {
+    for (path, times) in dir_times.into_iter() {
+        // TODO: Set created on Windows
+        match (times.accessed, times.modified) {
             (Some(accessed), Some(modified)) => {
                 filetime::set_file_times(path, accessed.into(), modified.into())?;
             }
@@ -141,20 +97,114 @@ pub fn exec(options: Options) -> anyhow::Result<()> {
     Ok(())
 }
 
+struct FileTimes {
+    accessed: Option<SystemTime>,
+    modified: Option<SystemTime>,
+    created: Option<SystemTime>,
+}
+
+impl FileTimes {
+    fn has_time(&self) -> bool {
+        self.accessed.is_some() || self.modified.is_some() || self.created.is_some()
+    }
+}
+
+impl From<FileTimes> for StdFileTimes {
+    fn from(times: FileTimes) -> Self {
+        let mut std_times = StdFileTimes::new();
+        if let Some(accessed) = times.accessed {
+            std_times = std_times.set_accessed(accessed);
+        }
+        if let Some(modified) = times.modified {
+            std_times = std_times.set_modified(modified);
+        }
+
+        #[cfg(windows)]
+        if let Some(created) = times.created {
+            use std::os::windows::fs::FileTimesExt;
+            std_times = std_times.set_created(created);
+        }
+
+        #[cfg(target_vendor = "apple")]
+        if let Some(created) = times.created {
+            use std::os::darwin::fs::FileTimesExt;
+            std_times = std_times.set_created(created);
+        }
+
+        std_times
+    }
+}
+
+fn get_zip_entry_file_name<'a>(file: &'a ZipFile) -> anyhow::Result<Cow<'a, str>> {
+    let file_name_raw = file.name_raw();
+
+    let mut encoding_detector = EncodingDetector::new();
+    let is_last = true;
+    encoding_detector.feed(file_name_raw, is_last);
+    let allow_utf8 = true;
+    let (encoding, is_likely_correct) = encoding_detector.guess_assess(None, allow_utf8);
+
+    ensure!(
+        is_likely_correct,
+        "failed to guess file name character encoding"
+    );
+
+    let (file_name, _encoding, malformed) = encoding.decode(file_name_raw);
+
+    ensure!(!malformed, "file name \"{file_name}\" is malformed");
+
+    let has_nul = file_name.contains('\0');
+    ensure!(!has_nul, "file name has an interior NUL character");
+
+    let file_path = Path::new(&*file_name);
+    let mut depth: usize = 0;
+    for component in file_path.components() {
+        match component {
+            PathComponent::Prefix(_) => {
+                bail!("file name contains a prefix");
+            }
+            PathComponent::RootDir => {
+                bail!("file name is absolute");
+            }
+            PathComponent::ParentDir => {
+                depth = depth
+                    .checked_sub(1)
+                    .context("file name attempts to go above root directory")?;
+            }
+            PathComponent::Normal(_) => {
+                depth = depth
+                    .checked_add(1)
+                    .context("file name exceeds maximum depth")?;
+            }
+            PathComponent::CurDir => {}
+        }
+    }
+
+    Ok(file_name)
+}
+
 /// Get the file times for a zip file.
 ///
 /// # Returns
 /// Returns a tuple of the accessed time, modified time, and create time.
-fn get_zip_entry_file_times(
-    file: &ZipFile<'_>,
-) -> anyhow::Result<Option<(Option<SystemTime>, Option<SystemTime>)>> {
+fn get_zip_entry_file_times(file: &ZipFile<'_>) -> anyhow::Result<FileTimes> {
+    // TODO: Read extra fields
+
     match file.last_modified() {
         Some(last_modified) => {
             let last_modified = OffsetDateTime::try_from(last_modified)?;
             let last_modified = SystemTime::from(last_modified);
 
-            Ok(Some((Some(last_modified), Some(last_modified))))
+            Ok(FileTimes {
+                accessed: Some(last_modified),
+                modified: Some(last_modified),
+                created: Some(last_modified),
+            })
         }
-        None => Ok(None),
+        None => Ok(FileTimes {
+            accessed: None,
+            modified: None,
+            created: None,
+        }),
     }
 }
