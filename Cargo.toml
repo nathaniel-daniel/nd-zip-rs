@@ -5,8 +5,8 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-anyhow = "1.0.94"
-argh = "0.1.12"
+anyhow = "1.0.95"
+argh = "0.1.13"
 chardetng = "0.1.17"
 encoding_rs = "0.8.35"
 filetime = "0.2.25"
