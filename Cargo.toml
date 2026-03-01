@@ -5,13 +5,13 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-anyhow = "1.0.97"
-argh = "0.1.13"
+anyhow = "1.0.102"
+argh = "0.1.14"
 chardetng = "0.1.17"
 encoding_rs = "0.8.35"
-filetime = "0.2.25"
-time = "0.3.41"
-zip = { version = "2.5.0", features = [ "time" ] }
+filetime = "0.2.27"
+time = "0.3.47"
+zip = { version = "8.1.0", features = [ "time" ] }
 
 [profile.release]
 lto = "fat"
