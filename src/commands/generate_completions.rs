@@ -1,7 +1,7 @@
 use crate::Options as RootOptions;
+use anyhow::Context;
 use anyhow::bail;
 use anyhow::ensure;
-use anyhow::Context;
 use clap::CommandFactory;
 use clap::Parser;
 use clap_complete::Shell;

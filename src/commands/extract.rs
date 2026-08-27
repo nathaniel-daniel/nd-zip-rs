@@ -1,6 +1,6 @@
+use anyhow::Context;
 use anyhow::bail;
 use anyhow::ensure;
-use anyhow::Context;
 use chardetng::EncodingDetector;
 use chardetng::Iso2022JpDetection;
 use chardetng::Utf8Detection;
@@ -16,8 +16,8 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 use time::OffsetDateTime;
 use time::PrimitiveDateTime;
-use zip::read::ZipFile;
 use zip::ZipArchive;
+use zip::read::ZipFile;
 
 #[derive(Debug, Parser)]
 #[command(about = "Extract a zip file")]
