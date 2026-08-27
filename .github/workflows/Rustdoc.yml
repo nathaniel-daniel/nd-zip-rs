@@ -10,7 +10,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Toolchain
+        # We need nightly until std::fs::set_times is on stable.
+        # uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@nightly
 
       - name: Build Documentation
         run: cargo doc --all --no-deps
