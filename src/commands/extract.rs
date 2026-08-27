@@ -2,15 +2,19 @@ use anyhow::bail;
 use anyhow::ensure;
 use anyhow::Context;
 use chardetng::EncodingDetector;
+use chardetng::Iso2022JpDetection;
+use chardetng::Utf8Detection;
 use std::borrow::Cow;
 use std::fs::File;
 use std::fs::FileTimes as StdFileTimes;
+use std::io::Read;
 use std::io::Write;
 use std::path::Component as PathComponent;
 use std::path::Path;
 use std::path::PathBuf;
 use std::time::SystemTime;
 use time::OffsetDateTime;
+use time::PrimitiveDateTime;
 use zip::read::ZipFile;
 use zip::ZipArchive;
 
@@ -159,19 +163,16 @@ impl From<FileTimes> for StdFileTimes {
     }
 }
 
-fn get_zip_entry_file_name<'a>(file: &'a ZipFile) -> anyhow::Result<Cow<'a, str>> {
+fn get_zip_entry_file_name<'a, R>(file: &'a ZipFile<R>) -> anyhow::Result<Cow<'a, str>>
+where
+    R: Read,
+{
     let file_name_raw = file.name_raw();
 
-    let mut encoding_detector = EncodingDetector::new();
+    let mut encoding_detector = EncodingDetector::new(Iso2022JpDetection::Deny);
     let is_last = true;
     encoding_detector.feed(file_name_raw, is_last);
-    let allow_utf8 = true;
-    let (encoding, is_likely_correct) = encoding_detector.guess_assess(None, allow_utf8);
-
-    ensure!(
-        is_likely_correct,
-        "failed to guess file name character encoding"
-    );
+    let encoding = encoding_detector.guess(None, Utf8Detection::Allow);
 
     let (file_name, _encoding, malformed) = encoding.decode(file_name_raw);
 
@@ -211,7 +212,10 @@ fn get_zip_entry_file_name<'a>(file: &'a ZipFile) -> anyhow::Result<Cow<'a, str>
 ///
 /// # Returns
 /// Returns a tuple of the accessed time, modified time, and create time.
-fn get_zip_entry_file_times(file: &ZipFile<'_>) -> anyhow::Result<FileTimes> {
+fn get_zip_entry_file_times<R>(file: &ZipFile<'_, R>) -> anyhow::Result<FileTimes>
+where
+    R: Read,
+{
     // I have no idea how to do this properly.
     // I think nobody else does too.
     // Zip files have a modern time format and a legacy one.
@@ -229,7 +233,7 @@ fn get_zip_entry_file_times(file: &ZipFile<'_>) -> anyhow::Result<FileTimes> {
 
     match file.last_modified() {
         Some(last_modified) => {
-            let last_modified = OffsetDateTime::try_from(last_modified)?;
+            let last_modified = PrimitiveDateTime::try_from(last_modified)?.assume_utc();
             let last_modified = SystemTime::from(last_modified);
 
             Ok(FileTimes {
