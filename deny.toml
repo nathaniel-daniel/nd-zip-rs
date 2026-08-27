@@ -26,9 +26,7 @@ exceptions = []
 [bans]
 multiple-versions = "warn"
 highlight = "all"
-skip = [
-    { name = "syn", version = "2.0.119" },
-]
+skip = []
 deny = []
 
 [sources]

@@ -4,6 +4,7 @@ use anyhow::Context;
 use chardetng::EncodingDetector;
 use chardetng::Iso2022JpDetection;
 use chardetng::Utf8Detection;
+use clap::Parser;
 use std::borrow::Cow;
 use std::fs::File;
 use std::fs::FileTimes as StdFileTimes;
@@ -18,32 +19,21 @@ use time::PrimitiveDateTime;
 use zip::read::ZipFile;
 use zip::ZipArchive;
 
-#[derive(Debug, argh::FromArgs)]
-#[argh(subcommand, name = "extract", description = "extract a zip file")]
+#[derive(Debug, Parser)]
+#[command(about = "Extract a zip file")]
 pub struct Options {
-    #[argh(positional)]
     pub input_file: PathBuf,
 
-    #[argh(
-        option,
-        short = 'o',
-        long = "out-path",
-        description = "the path to decompress to"
-    )]
+    #[arg(short = 'o', long = "out-path", help = "The path to decompress to")]
     pub out_path: PathBuf,
 
-    #[argh(
-        switch,
-        long = "verbose",
-        short = 'v',
-        description = "increase command verbosity"
-    )]
+    #[arg(short = 'v', long = "verbose", help = "Increase command verbosity")]
     pub verbose: bool,
 }
 
 pub fn exec(options: Options) -> anyhow::Result<()> {
     let input_file = File::open(&options.input_file)
-        .with_context(|| format!("failed to open \"{}\"", options.input_file.display()))?;
+        .with_context(|| format!("Failed to open \"{}\"", options.input_file.display()))?;
     let mut archive = ZipArchive::new(input_file)?;
 
     let mut dir_times = Vec::new();
@@ -57,7 +47,7 @@ pub fn exec(options: Options) -> anyhow::Result<()> {
         let times = get_zip_entry_file_times(&file)?;
 
         if options.verbose {
-            println!("{}", file_name);
+            println!("{file_name}");
 
             if let Some(accessed) = times.accessed {
                 println!("  Accessed: {}", OffsetDateTime::from(accessed));
@@ -74,7 +64,7 @@ pub fn exec(options: Options) -> anyhow::Result<()> {
 
         if file.is_dir() {
             std::fs::create_dir_all(&out_path).with_context(|| {
-                format!("failed to create directory \"{}\"", out_path.display())
+                format!("Failed to create directory \"{}\"", out_path.display())
             })?;
 
             if times.has_time() {
@@ -84,7 +74,7 @@ pub fn exec(options: Options) -> anyhow::Result<()> {
             // Some bad ZIP files do not provide a dir entry before a file entry.
             if let Some(parent_dir) = out_path.parent() {
                 std::fs::create_dir_all(parent_dir).with_context(|| {
-                    format!("failed to create directory \"{}\"", out_path.display())
+                    format!("Failed to create directory \"{}\"", out_path.display())
                 })?;
             }
 
@@ -92,7 +82,7 @@ pub fn exec(options: Options) -> anyhow::Result<()> {
                 .write(true)
                 .create_new(true)
                 .open(&out_path)
-                .with_context(|| format!("failed to open file at \"{}\"", out_path.display()))?;
+                .with_context(|| format!("Failed to open file at \"{}\"", out_path.display()))?;
             std::io::copy(&mut file, &mut out_file)?;
 
             if times.has_time() {
@@ -102,7 +92,7 @@ pub fn exec(options: Options) -> anyhow::Result<()> {
             out_file.flush()?;
             out_file.sync_all()?;
         } else {
-            bail!("cannot extract entry that is not a file nor a dir");
+            bail!("Cannot extract entry that is not a file nor a dir");
         }
     }
 
