@@ -69,6 +69,90 @@ impl From<FileTimes> for StdFileTimes {
     }
 }
 
+/// Get the file times for a zip file.
+fn get_zip_entry_file_times<R>(file: &ZipFile<'_, R>) -> anyhow::Result<FileTimes>
+where
+    R: Read,
+{
+    // I have no idea how to do this properly.
+    // I think nobody else does too.
+    // Zip files have a modern time format and a legacy one.
+    // (modern format handling is TODO).
+    // Lots of zip files only use the legacy format.
+    // This format is an encoded date time, with no timezone.
+    // As a result, lots of software can't agree how to handle it.
+    // 7Zip, WinRar, the Windows 11 file extractor, and this impl all give different answers,
+    // even apparently giving different UTC offsets between different files.
+    // I have no idea what I'm doing something wrong, if I'm even doing anything wrong, or if everyone else is doing something wrong.
+    // This is best effort anyways, and usually within a day of the "real?" value.
+
+    // TODO: Read extra fields
+    // dbg!(file.extra_data_fields().count());
+
+    match file.last_modified() {
+        Some(last_modified) => {
+            let last_modified = PrimitiveDateTime::try_from(last_modified)?.assume_utc();
+            let last_modified = SystemTime::from(last_modified);
+
+            Ok(FileTimes {
+                accessed: Some(last_modified),
+                modified: Some(last_modified),
+                created: Some(last_modified),
+            })
+        }
+        None => Ok(FileTimes {
+            accessed: None,
+            modified: None,
+            created: None,
+        }),
+    }
+}
+
+fn get_zip_entry_file_name<'a, R>(file: &'a ZipFile<R>) -> anyhow::Result<Cow<'a, str>>
+where
+    R: Read,
+{
+    let file_name_raw = file.name_raw();
+
+    let mut encoding_detector = EncodingDetector::new(Iso2022JpDetection::Deny);
+    let is_last = true;
+    encoding_detector.feed(file_name_raw, is_last);
+    let encoding = encoding_detector.guess(None, Utf8Detection::Allow);
+
+    let (file_name, _encoding, malformed) = encoding.decode(file_name_raw);
+
+    ensure!(!malformed, "File name \"{file_name}\" is malformed");
+
+    let has_nul = file_name.contains('\0');
+    ensure!(!has_nul, "File name has an interior NUL character");
+
+    let file_path = Path::new(&*file_name);
+    let mut depth: usize = 0;
+    for component in file_path.components() {
+        match component {
+            PathComponent::Prefix(_) => {
+                bail!("File name contains a prefix");
+            }
+            PathComponent::RootDir => {
+                bail!("File name is absolute");
+            }
+            PathComponent::ParentDir => {
+                depth = depth
+                    .checked_sub(1)
+                    .context("File name attempts to go above root directory")?;
+            }
+            PathComponent::Normal(_) => {
+                depth = depth
+                    .checked_add(1)
+                    .context("File name exceeds maximum depth")?;
+            }
+            PathComponent::CurDir => {}
+        }
+    }
+
+    Ok(file_name)
+}
+
 pub fn exec(options: Options) -> anyhow::Result<()> {
     let input_file = File::open(&options.input_file)
         .with_context(|| format!("Failed to open \"{}\"", options.input_file.display()))?;
@@ -135,96 +219,8 @@ pub fn exec(options: Options) -> anyhow::Result<()> {
     }
 
     for (path, times) in dir_times.into_iter().rev() {
-        let times = StdFileTimes::from(times);
-        std::fs::set_times(path, times)?;
+        std::fs::set_times(path, times.into())?;
     }
 
     Ok(())
-}
-
-fn get_zip_entry_file_name<'a, R>(file: &'a ZipFile<R>) -> anyhow::Result<Cow<'a, str>>
-where
-    R: Read,
-{
-    let file_name_raw = file.name_raw();
-
-    let mut encoding_detector = EncodingDetector::new(Iso2022JpDetection::Deny);
-    let is_last = true;
-    encoding_detector.feed(file_name_raw, is_last);
-    let encoding = encoding_detector.guess(None, Utf8Detection::Allow);
-
-    let (file_name, _encoding, malformed) = encoding.decode(file_name_raw);
-
-    ensure!(!malformed, "file name \"{file_name}\" is malformed");
-
-    let has_nul = file_name.contains('\0');
-    ensure!(!has_nul, "file name has an interior NUL character");
-
-    let file_path = Path::new(&*file_name);
-    let mut depth: usize = 0;
-    for component in file_path.components() {
-        match component {
-            PathComponent::Prefix(_) => {
-                bail!("file name contains a prefix");
-            }
-            PathComponent::RootDir => {
-                bail!("file name is absolute");
-            }
-            PathComponent::ParentDir => {
-                depth = depth
-                    .checked_sub(1)
-                    .context("file name attempts to go above root directory")?;
-            }
-            PathComponent::Normal(_) => {
-                depth = depth
-                    .checked_add(1)
-                    .context("file name exceeds maximum depth")?;
-            }
-            PathComponent::CurDir => {}
-        }
-    }
-
-    Ok(file_name)
-}
-
-/// Get the file times for a zip file.
-///
-/// # Returns
-/// Returns a tuple of the accessed time, modified time, and create time.
-fn get_zip_entry_file_times<R>(file: &ZipFile<'_, R>) -> anyhow::Result<FileTimes>
-where
-    R: Read,
-{
-    // I have no idea how to do this properly.
-    // I think nobody else does too.
-    // Zip files have a modern time format and a legacy one.
-    // (modern format handling is TODO).
-    // Lots of zip files only use the legacy format.
-    // This format is an encoded date time, with no timezone.
-    // As a result, lots of software can't agree how to handle it.
-    // 7Zip, WinRar, the Windows 11 file extractor, and this impl all give different answers,
-    // even apparently giving different UTC offsets between different files.
-    // I have no idea what I'm doing something wrong, if I'm even doing anything wrong, or if everyone else is doing something wrong.
-    // This is best effort anyways, and usually within a day of the "real?" value.
-
-    // TODO: Read extra fields
-    // dbg!(file.extra_data_fields().count());
-
-    match file.last_modified() {
-        Some(last_modified) => {
-            let last_modified = PrimitiveDateTime::try_from(last_modified)?.assume_utc();
-            let last_modified = SystemTime::from(last_modified);
-
-            Ok(FileTimes {
-                accessed: Some(last_modified),
-                modified: Some(last_modified),
-                created: Some(last_modified),
-            })
-        }
-        None => Ok(FileTimes {
-            accessed: None,
-            modified: None,
-            created: None,
-        }),
-    }
 }
