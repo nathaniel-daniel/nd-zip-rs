@@ -1,22 +1,27 @@
 name: Rustdoc
 on:
   push:
-   branches:
-   - master
+    branches:
+      - master
 jobs:
   rustdoc:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      
-    - name: Build Documentation
-      run: cargo doc --all --no-deps
-      
-    - name: Deploy Docs
-      uses: peaceiris/actions-gh-pages@v3
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_branch: gh-pages
-        publish_dir: ./target/doc
-        force_orphan: true
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Toolchain
+        # We need nightly until std::fs::set_times is on stable.
+        # uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Build Documentation
+        run: cargo doc --all --no-deps
+
+      - name: Deploy Docs
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ./target/doc
+          force_orphan: true

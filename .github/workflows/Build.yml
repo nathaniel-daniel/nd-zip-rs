@@ -1,5 +1,5 @@
 name: Rust
-'on':
+"on":
   push:
     branches:
       - master
@@ -13,7 +13,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        
+
+      - name: Install Toolchain
+        # We need nightly until std::fs::set_times is on stable.
+        # uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: "clippy, rustfmt"
+
       - name: Cache
         uses: actions/cache@v3
         with:
@@ -24,30 +31,35 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-lint-cargo-${{ hashFiles('**/Cargo.lock') }}
-          
+
       - name: RustFmt
         run: cargo fmt -- --check --color always
-          
+
       - name: Clippy
         run: cargo clippy --tests --all --all-features -- -D warnings
-          
+
   deny:
     name: Deny
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        
+
       - name: Deny
         uses: EmbarkStudios/cargo-deny-action@v2
-        
+
   build:
     name: Build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        
+
+      - name: Install Toolchain
+        # We need nightly until std::fs::set_times is on stable.
+        # uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@nightly
+
       - name: Cache
         uses: actions/cache@v3
         with:
@@ -58,6 +70,6 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-lint-cargo-${{ hashFiles('**/Cargo.lock') }}
-        
+
       - name: Build
         run: cargo build --verbose

@@ -1,19 +1,19 @@
 use anyhow::Context;
+use clap::Parser;
 use std::fs::File;
 use std::path::PathBuf;
 use zip::HasZipMetadata;
 use zip::ZipArchive;
 
-#[derive(Debug, argh::FromArgs)]
-#[argh(subcommand, name = "info", description = "get info about a zip file")]
+#[derive(Debug, Parser)]
+#[command(about = "Get info about a zip file")]
 pub struct Options {
-    #[argh(positional)]
     pub input_file: PathBuf,
 }
 
 pub fn exec(options: Options) -> anyhow::Result<()> {
     let input_file = File::open(&options.input_file)
-        .with_context(|| format!("failed to open \"{}\"", options.input_file.display()))?;
+        .with_context(|| format!("Failed to open \"{}\"", options.input_file.display()))?;
     let mut archive = ZipArchive::new(input_file)?;
 
     for i in 0..archive.len() {
