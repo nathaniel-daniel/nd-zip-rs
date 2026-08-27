@@ -18,6 +18,8 @@ jobs:
         # We need nightly until std::fs::set_times is on stable.
         # uses: dtolnay/rust-toolchain@stable
         uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: "clippy, rustfmt"
 
       - name: Cache
         uses: actions/cache@v3
