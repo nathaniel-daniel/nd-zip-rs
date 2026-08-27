@@ -5,10 +5,12 @@ use chardetng::EncodingDetector;
 use chardetng::Iso2022JpDetection;
 use chardetng::Utf8Detection;
 use clap::Parser;
+use encoding_rs::Encoding;
 use std::borrow::Cow;
 use std::fs::File;
 use std::fs::FileTimes as StdFileTimes;
 use std::io::Read;
+use std::io::Seek;
 use std::io::Write;
 use std::path::Component as PathComponent;
 use std::path::Path;
@@ -24,11 +26,17 @@ use zip::read::ZipFile;
 pub struct Options {
     pub input_file: PathBuf,
 
-    #[arg(short = 'o', long = "out-path", help = "The path to decompress to")]
+    #[arg(help = "The path to decompress to", default_value = ".")]
     pub out_path: PathBuf,
 
     #[arg(short = 'v', long = "verbose", help = "Increase command verbosity")]
     pub verbose: bool,
+
+    #[arg(
+        long = "single-encoding",
+        help = "Assume the file only uses a single file name encoding"
+    )]
+    pub single_encoding: bool,
 }
 
 struct FileTimes {
@@ -108,16 +116,24 @@ where
     }
 }
 
-fn get_zip_entry_file_name<'a, R>(file: &'a ZipFile<R>) -> anyhow::Result<Cow<'a, str>>
+fn get_zip_entry_file_name<'a, R>(
+    file: &'a ZipFile<R>,
+    encoding: Option<&'static Encoding>,
+) -> anyhow::Result<Cow<'a, str>>
 where
     R: Read,
 {
     let file_name_raw = file.name_raw();
 
-    let mut encoding_detector = EncodingDetector::new(Iso2022JpDetection::Deny);
-    let is_last = true;
-    encoding_detector.feed(file_name_raw, is_last);
-    let encoding = encoding_detector.guess(None, Utf8Detection::Allow);
+    let encoding = match encoding {
+        Some(encoding) => encoding,
+        None => {
+            let mut encoding_detector = EncodingDetector::new(Iso2022JpDetection::Deny);
+            let is_last = true;
+            encoding_detector.feed(file_name_raw, is_last);
+            encoding_detector.guess(None, Utf8Detection::Allow)
+        }
+    };
 
     let (file_name, _encoding, malformed) = encoding.decode(file_name_raw);
 
@@ -153,16 +169,40 @@ where
     Ok(file_name)
 }
 
+fn guess_archive_encoding<R>(archive: &mut ZipArchive<R>) -> anyhow::Result<&'static Encoding>
+where
+    R: Read + Seek,
+{
+    let mut encoding_detector = EncodingDetector::new(Iso2022JpDetection::Deny);
+
+    let archive_len = archive.len();
+    for entry_index in 0..archive_len {
+        let file = archive.by_index(entry_index)?;
+        let file_name_raw = file.name_raw();
+
+        let is_last = entry_index + 1 == archive_len;
+        encoding_detector.feed(file_name_raw, is_last);
+    }
+
+    let encoding = encoding_detector.guess(None, Utf8Detection::Allow);
+    Ok(encoding)
+}
+
 pub fn exec(options: Options) -> anyhow::Result<()> {
     let input_file = File::open(&options.input_file)
         .with_context(|| format!("Failed to open \"{}\"", options.input_file.display()))?;
     let mut archive = ZipArchive::new(input_file)?;
 
-    let mut dir_times = Vec::new();
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i)?;
+    let mut encoding = None;
+    if options.single_encoding {
+        encoding = Some(guess_archive_encoding(&mut archive)?);
+    }
 
-        let file_name = get_zip_entry_file_name(&file)?;
+    let mut dir_times = Vec::with_capacity(archive.len());
+    for entry_index in 0..archive.len() {
+        let mut file = archive.by_index(entry_index)?;
+
+        let file_name = get_zip_entry_file_name(&file, encoding)?;
 
         let out_path = options.out_path.join(&*file_name);
 
