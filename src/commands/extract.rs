@@ -31,6 +31,44 @@ pub struct Options {
     pub verbose: bool,
 }
 
+struct FileTimes {
+    accessed: Option<SystemTime>,
+    modified: Option<SystemTime>,
+    created: Option<SystemTime>,
+}
+
+impl FileTimes {
+    fn has_time(&self) -> bool {
+        self.accessed.is_some() || self.modified.is_some() || self.created.is_some()
+    }
+}
+
+impl From<FileTimes> for StdFileTimes {
+    fn from(times: FileTimes) -> Self {
+        let mut std_times = StdFileTimes::new();
+        if let Some(accessed) = times.accessed {
+            std_times = std_times.set_accessed(accessed);
+        }
+        if let Some(modified) = times.modified {
+            std_times = std_times.set_modified(modified);
+        }
+
+        #[cfg(windows)]
+        if let Some(created) = times.created {
+            use std::os::windows::fs::FileTimesExt;
+            std_times = std_times.set_created(created);
+        }
+
+        #[cfg(target_vendor = "apple")]
+        if let Some(created) = times.created {
+            use std::os::darwin::fs::FileTimesExt;
+            std_times = std_times.set_created(created);
+        }
+
+        std_times
+    }
+}
+
 pub fn exec(options: Options) -> anyhow::Result<()> {
     let input_file = File::open(&options.input_file)
         .with_context(|| format!("Failed to open \"{}\"", options.input_file.display()))?;
@@ -97,60 +135,11 @@ pub fn exec(options: Options) -> anyhow::Result<()> {
     }
 
     for (path, times) in dir_times.into_iter().rev() {
-        // TODO: Set created on Windows
-        match (times.accessed, times.modified) {
-            (Some(accessed), Some(modified)) => {
-                filetime::set_file_times(path, accessed.into(), modified.into())?;
-            }
-            (Some(accessed), None) => {
-                filetime::set_file_atime(path, accessed.into())?;
-            }
-            (None, Some(modified)) => {
-                filetime::set_file_mtime(path, modified.into())?;
-            }
-            (None, None) => {}
-        }
+        let times = StdFileTimes::from(times);
+        std::fs::set_times(path, times)?;
     }
 
     Ok(())
-}
-
-struct FileTimes {
-    accessed: Option<SystemTime>,
-    modified: Option<SystemTime>,
-    created: Option<SystemTime>,
-}
-
-impl FileTimes {
-    fn has_time(&self) -> bool {
-        self.accessed.is_some() || self.modified.is_some() || self.created.is_some()
-    }
-}
-
-impl From<FileTimes> for StdFileTimes {
-    fn from(times: FileTimes) -> Self {
-        let mut std_times = StdFileTimes::new();
-        if let Some(accessed) = times.accessed {
-            std_times = std_times.set_accessed(accessed);
-        }
-        if let Some(modified) = times.modified {
-            std_times = std_times.set_modified(modified);
-        }
-
-        #[cfg(windows)]
-        if let Some(created) = times.created {
-            use std::os::windows::fs::FileTimesExt;
-            std_times = std_times.set_created(created);
-        }
-
-        #[cfg(target_vendor = "apple")]
-        if let Some(created) = times.created {
-            use std::os::darwin::fs::FileTimesExt;
-            std_times = std_times.set_created(created);
-        }
-
-        std_times
-    }
 }
 
 fn get_zip_entry_file_name<'a, R>(file: &'a ZipFile<R>) -> anyhow::Result<Cow<'a, str>>

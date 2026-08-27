@@ -10,7 +10,6 @@ chardetng = "1.0.0"
 clap = { version = "4.6.6", features = ["derive"] }
 clap_complete = "4.6.9"
 encoding_rs = "0.8.35"
-filetime = "0.2.29"
 time = "0.3.55"
 zip = { version = "8.6.0", features = [ "time" ] }
 
