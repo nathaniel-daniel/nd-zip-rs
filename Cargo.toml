@@ -11,7 +11,7 @@ clap = { version = "4.6.6", features = ["derive"] }
 clap_complete = "4.6.9"
 encoding_rs = "0.8.35"
 time = "0.3.55"
-zip = { version = "8.6.0", features = [ "time" ] }
+zip = { version = "9.1.3", features = [ "time" ] }
 
 [profile.release]
 lto = "fat"
